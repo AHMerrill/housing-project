@@ -9,11 +9,7 @@ library(stringr)
 library(tidytext)
 library(tibble)
 
-getwd()
-
-# setwd("/Users/zan/Desktop/MSBA/summer/machine learning/class 6")
-
-data <- read.csv('austinhouses.csv')
+housing_data <- read.csv('PredictionContest/austinhouses.csv')
 
 # This code snippet counts the top words in the description (not including stop words)
 
@@ -73,12 +69,28 @@ count_keywords <- function(df, keyword_list, column_name = "description") {
 good_counts <- count_keywords(housing_data, word_lists$good)
 bad_counts <- count_keywords(housing_data, word_lists$bad)
 
-# Convert to data frames
-good_df <- tibble(word = names(good_counts), count = good_counts)
-bad_df  <- tibble(word = names(bad_counts), count = bad_counts)
+# Convert to data frames and sort
+good_df <- tibble(word = names(good_counts), count = good_counts) %>%
+  arrange(desc(count))
+
+bad_df <- tibble(word = names(bad_counts), count = bad_counts) %>%
+  arrange(desc(count))
 
 print(good_df)
 print(bad_df)
+
+# Trim word lists
+word_lists <- list(
+  good = c(
+    'luxurious', 'stainless', 'basketball', 'landscaped', 
+    'granite', 'pergola', 'remodel', 'beautiful', 
+    'tile', 'upgraded', 'updated','greenbelt'
+  ),
+  bad = c(
+    'charming', 'cozy', 'investment', 'investor', 
+    'potential', 'opportunity', 'nice'
+  )
+)
 
 # This adds and deletes columns for one hot encoding for words that we're searching for.  
 # only the words that we're currently looking for will have a column.  
@@ -103,8 +115,69 @@ for (colname in names(search_words)) {
   data_nlp[[colname]] <- ifelse(str_detect(data_nlp$description, pattern), 1, 0)
 }
 
-# Step 5: View or work with your result
-glimpse(data_nlp)
+###########
+# Cut cols that cannot be used to predict, add days_since_sale and yearsOld
 
-# option to save data_nlp as a separate csv
-# write.csv(data_nlp, file = "data_nlp.csv", row.names = FALSE)
+housing_data <- data_nlp %>%
+  mutate(
+    latest_saledate = as.Date(latest_saledate),
+    # Set reference date to 3 years ago from today
+    days_since_sale = as.numeric(Sys.Date() - (3 * 365) - latest_saledate),
+    yearsOld = 2022 - yearBuilt
+  ) %>%
+  select(-streetAddress, -latest_saledate, -latest_salemonth, -latest_saleyear, 
+         -yearBuilt, -homeType, -description)
+
+
+###########
+# 1-hot encode zipcode and remove rare (< 20) zipcodes
+housing_data$zipcode <- as.factor(housing_data$zipcode)
+
+zipcode_dummies <- model.matrix(~ zipcode - 1, data = housing_data)
+
+# 2. Convert to data frame
+zipcode_dummies <- as.data.frame(zipcode_dummies)
+
+# 3. Remove the rare zipcode dummy columns (with exact names)
+rare_zipcodes <- c("zipcode78734", "zipcode78742", "zipcode78652", "zipcode78719", "zipcode78738")
+zipcode_dummies <- zipcode_dummies %>% select(-all_of(rare_zipcodes))
+
+# 4. Bind dummies back to housing_data and remove original zipcode
+housing_data <- housing_data %>%
+  select(-zipcode) %>%
+  bind_cols(zipcode_dummies)
+
+
+###########
+# Add transformed features
+housing_data <- housing_data %>%
+  mutate(
+    log_lotSizeSqFt = log1p(lotSizeSqFt),
+    log_livingAreaSqFt = log1p(livingAreaSqFt),
+    log_avgSchoolSize = log1p(avgSchoolSize),
+    yearsOld_sq = yearsOld^2,
+    avgSchoolRating_sq = avgSchoolRating^2
+  )
+
+
+###########
+# Making two version of NLP
+housing_data_binary_NLP <- housing_data
+
+housing_data_numeric_NLP <- housing_data %>%
+  mutate(
+    word_count_good = rowSums(select(., starts_with("good_"))),
+    word_count_bad = rowSums(select(., starts_with("bad_")))
+  ) %>%
+  select(-starts_with("good_"), -starts_with("bad_"))
+
+glimpse(housing_data_binary_NLP)
+glimpse(housing_data_numeric_NLP)
+
+head(housing_data_binary_NLP)
+
+# Save data
+write.csv(housing_data_binary_NLP, "housing_data_binary_NLP.csv", row.names = FALSE)
+write.csv(housing_data_numeric_NLP, "housing_data_numeric_NLP.csv", row.names = FALSE)
+
+
