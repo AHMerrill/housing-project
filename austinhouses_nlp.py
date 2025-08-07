@@ -1,3 +1,5 @@
+# used chatGPT to convert our R script to python
+# have not tested as of Aug 6 11:25pm
 
 import pandas as pd
 import numpy as np
