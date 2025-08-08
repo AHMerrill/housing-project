@@ -8,3 +8,6 @@ patsy
 mlxtend
 ipython
 xgboost
+requests
+geopandas
+shapely
